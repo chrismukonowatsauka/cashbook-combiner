@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cashbook Combiner</title>
+<meta name="description" content="A Power Query that combines a multi-sheet bank cashbook into one table, with a balance proof per sheet.">
+<style>
+:root {
+  --ink: #000;
+  --text: #1a1a1a;
+  --muted: #666;
+  --line: #d9d9d9;
+  --soft: #f3f3f3;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: #fff; color: var(--text); font: 15px/1.5 var(--font); }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+
+/* header */
+.top { border-bottom: 2px solid var(--ink); }
+.top .wrap { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-top: 22px; padding-bottom: 16px; }
+h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
+.sub { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+h2 { margin: 0; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink); }
+
+/* buttons */
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 8px 18px; border: 1px solid var(--ink); background: #fff; color: var(--ink); font-weight: 600; font-size: 14px; cursor: pointer; border-radius: 0; text-decoration: none; }
+.btn:hover { background: var(--soft); }
+.btn.primary { background: var(--ink); color: #fff; }
+.btn.primary:hover { background: #333; }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.btn:focus-visible, .link:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.link { background: none; border: 0; padding: 0; color: var(--ink); text-decoration: underline; cursor: pointer; font-size: 14px; }
+#helpBtn { animation: nudge 1.2s steps(1, end) infinite; }
+#helpBtn[aria-expanded="true"] { animation: none; }
+@media (prefers-reduced-motion: reduce) { #helpBtn { animation-duration: 3s; } }
+@keyframes nudge { 0% { background: #fff; color: var(--ink); } 50% { background: var(--ink); color: #fff; } }
+
+/* sections */
+section { padding: 26px 0; border-bottom: 1px solid var(--line); }
+section:last-of-type { border-bottom: 0; }
+.sechead { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+
+/* inputs */
+.inputs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+.panel { border: 1px solid var(--ink); padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-content: start; min-width: 0; }
+.panel > * { min-width: 0; }
+.panel.drag { background: var(--soft); outline: 2px dashed var(--ink); outline-offset: -6px; }
+.panel .ph { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.panel textarea { width: 100%; height: 132px; resize: vertical; border: 1px dashed #999; padding: 10px; font-size: 13px; background: #fff; }
+.panel textarea::placeholder { color: #888; }
+.loaded { display: flex; justify-content: space-between; align-items: center; gap: 10px; border: 1px solid var(--line); background: var(--soft); padding: 10px 12px; font-size: 14px; }
+.loaded b { font-weight: 600; }
+.field { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; }
+.field input { width: 150px; max-width: 55%; border: 1px solid #999; padding: 7px 9px; text-align: right; font-variant-numeric: tabular-nums; border-radius: 0; }
+.warn { font-size: 13px; color: var(--ink); background: var(--soft); border-left: 3px solid var(--ink); padding: 6px 10px; }
+details.cols summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.mapgrid { overflow-x: auto; margin-top: 8px; max-width: 100%; -webkit-overflow-scrolling: touch; }
+details.cols { min-width: 0; max-width: 100%; }
+.mapgrid table { border-collapse: collapse; font-size: 12px; }
+.mapgrid th, .mapgrid td { border: 1px solid var(--line); padding: 4px 6px; white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.mapgrid select { font-size: 12px; border: 1px solid #999; border-radius: 0; padding: 2px; }
+.mapgrid td.off { color: #aaa; }
+.actions { display: flex; gap: 12px; align-items: center; padding: 20px 0 0; }
+.filebtn { position: relative; overflow: hidden; }
+.filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+/* reconciliation statement */
+.summary { margin: 0 0 14px; font-size: 14px; color: var(--muted); }
+table.stmt { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.stmt th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--ink); padding: 6px 8px; }
+.stmt td { padding: 5px 8px; vertical-align: top; }
+.stmt .n { text-align: right; white-space: nowrap; }
+.stmt .dt { white-space: nowrap; color: var(--muted); width: 1%; }
+.stmt th.n { width: 1%; }
+.stmt .ref { display: block; font-size: 12px; color: var(--muted); }
+.stmt tr.k-balance td { font-weight: 700; padding-top: 10px; }
+.stmt tr.k-heading td { font-weight: 700; background: var(--soft); padding-top: 7px; padding-bottom: 7px; }
+.stmt tr.k-item td:first-child { padding-left: 20px; }
+.stmt tr.k-subtotal td { color: var(--muted); font-style: italic; }
+.stmt tr.k-subtotal td.tot { font-style: normal; color: var(--text); border-top: 1px solid var(--ink); }
+.stmt tr.k-closing td { font-weight: 700; border-top: 1px solid var(--line); padding-top: 10px; }
+.stmt tr.k-final td { font-weight: 700; }
+.stmt tr.k-final td.tot { border-top: 1px solid var(--ink); border-bottom: 3px double var(--ink); }
+.stmt tr.k-final.off td { background: var(--soft); }
+.status { display: inline-block; margin-left: 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* about + footer */
+.about p { margin: 8px 0 0; max-width: 720px; color: var(--text); font-size: 14px; }
+footer { border-top: 2px solid var(--ink); margin-top: 8px; }
+footer .wrap { padding-top: 14px; padding-bottom: 28px; font-size: 13px; color: var(--muted); }
+footer a { color: var(--ink); }
+
+/* help panel */
+.help { position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100%); background: #fff; border-left: 2px solid var(--ink); z-index: 20; overflow-y: auto; padding: 22px 24px 40px; }
+.help[hidden] { display: none; }
+.help .ht { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.help h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin: 22px 0 6px; color: var(--ink); }
+.help p, .help li { font-size: 14px; }
+.help ol, .help ul { padding-left: 18px; margin: 0; display: grid; gap: 5px; }
+.help p { margin: 0 0 6px; }
+.demo { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 14px; }
+.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 8px 16px; font-size: 14px; z-index: 30; }
+.toast:empty { display: none; }
+
+/* tablets and phones */
+@media (max-width: 760px) {
+  .inputs, .inputs.four { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+  body { font-size: 14px; }
+  .wrap { padding: 0 14px; }
+  h1 { font-size: 19px; }
+  .sub { font-size: 13px; }
+  section { padding: 20px 0; }
+  .panel { padding: 12px; }
+  .actions .btn, .sechead .btn { flex: 1; }
+  .sechead h2 { width: 100%; }
+  .stmt td { padding: 5px 4px; }
+  .stmt tr.k-item td:first-child { padding-left: 10px; }
+  table.stmt { font-size: 13px; }
+}
+@media print {
+  .top .btn, .inputs, .actions, .sechead .btn, .about, .help { display: none !important; }
+}
+
+/* key figures and review lists */
+table.kv, table.list { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.kv th, .list th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--ink); padding: 6px 8px; }
+.kv td, .list td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.kv .n, .list .n { text-align: right; white-space: nowrap; }
+.kv tr.flag td, .list tr.flag td { font-weight: 700; background: var(--soft); }
+.list td.d { white-space: nowrap; width: 1%; }
+.subsec { margin-top: 26px; }
+.subsec h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 10px; }
+.panel select { width: 100%; border: 1px solid #999; padding: 7px 9px; border-radius: 0; background: #fff; }
+.panel .opt { font-weight: 400; color: var(--muted); text-transform: none; letter-spacing: 0; }
+.panel .note { font-size: 13px; color: var(--muted); margin: 0; }
+@media (max-width: 560px) { .list td, .kv td { padding: 6px 4px; } .list, .kv { font-size: 13px; } }
+/* write-up pages */
+main.wrap section p { margin: 10px 0 0; max-width: 72ch; }
+main.wrap section h2 + p { margin-top: 12px; }
+.facts { display: flex; flex-wrap: wrap; gap: 0; margin: 14px 0 0; border: 1px solid var(--ink); width: fit-content; max-width: 100%; }
+.facts span { padding: 6px 12px; font-size: 13px; border-right: 1px solid var(--ink); }
+.facts span:last-child { border-right: 0; }
+ul.plain { margin: 12px 0 0; padding-left: 20px; display: grid; gap: 6px; max-width: 72ch; }
+.figure { display: grid; grid-template-columns: minmax(0, 1.3fr) auto minmax(0, 1fr); gap: 16px; align-items: center; margin-top: 14px; }
+.sheets { display: grid; gap: 12px; min-width: 0; }
+.mini { border: 1px solid var(--ink); min-width: 0; }
+.mini .cap { font-size: 12px; font-weight: 700; padding: 6px 10px; border-bottom: 1px solid var(--ink); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.mini .cap em { font-style: normal; color: var(--muted); font-weight: 400; }
+.tw { overflow-x: auto; }
+.tw table { border-collapse: collapse; width: 100%; font: 12px/1.4 Consolas, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+.tw th { text-align: left; font: 600 11px var(--font); color: var(--muted); padding: 4px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tw td { padding: 3px 6px; border-bottom: 1px solid var(--soft); white-space: nowrap; }
+.tw td.n, .tw th.n { text-align: right; }
+.tw td.red { font-weight: 700; text-decoration: underline; }
+.tw tr.open td { font-weight: 700; }
+.tw tr.skip td { color: var(--muted); }
+.arrow { font-size: 26px; font-weight: 700; text-align: center; }
+.arrow small { display: block; font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+.steps { counter-reset: s; display: grid; gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; max-width: 76ch; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 32px 1fr; gap: 10px; }
+.steps li::before { content: counter(s); font-weight: 700; font-size: 13px; border: 1px solid var(--ink); width: 24px; height: 24px; display: grid; place-items: center; }
+pre { margin: 14px 0 0; background: var(--soft); border-left: 3px solid var(--ink); padding: 12px 14px; font: 12px/1.5 Consolas, "SF Mono", Menlo, monospace; overflow-x: auto; }
+code { font-family: Consolas, "SF Mono", Menlo, monospace; font-size: 0.92em; }
+.files { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+.file { border: 1px solid var(--ink); padding: 14px; display: grid; gap: 6px; align-content: start; text-decoration: none; color: var(--ink); }
+.file:hover, .file:focus-visible { background: var(--ink); color: #fff; }
+.file:hover small, .file:focus-visible small { color: #ddd; }
+.file b { font-size: 14px; word-break: break-word; }
+.file small { color: var(--muted); font-size: 13px; }
+.check { display: grid; grid-template-columns: repeat(4, auto); gap: 4px 20px; justify-content: start; font: 13px Consolas, "SF Mono", Menlo, monospace; border: 1px solid var(--ink); padding: 10px 14px; margin-top: 14px; font-variant-numeric: tabular-nums; }
+.check b { font: 600 11px var(--font); color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+@media (max-width: 760px) {
+  .figure { grid-template-columns: minmax(0, 1fr); }
+  .arrow { transform: rotate(90deg); }
+  .files { grid-template-columns: minmax(0, 1fr); }
+  .check { grid-template-columns: repeat(2, auto); }
+}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap" style="display:block">
+  <h1>Cashbook Combiner</h1>
+  <p class="sub">Excel and Power Query</p>
+</div></header>
+
+<main class="wrap">
+  <section>
+    <p style="margin-top:0">One Power Query that turns a bank cashbook spread over dozens of sheets into a single table, so any branch's transactions across every bank are one filter away.</p>
+    <div class="facts"><span>Power Query (M)</span><span>Two sheet layouts</span><span>New sheets picked up automatically</span><span>Balance proof per sheet</span></div>
+  </section>
+
+  <section>
+    <h2>The problem</h2>
+    <p>A multi-branch retailer keeps one cashbook workbook with a sheet per bank account: USD and ZiG accounts at several banks, mobile cash deposits and rand. At month end that can be 50 or more sheets and over 25,000 lines.</p>
+    <p>To answer simple questions, such as everything a branch banked across all accounts, or which lines still have no posting reference, someone had to open sheet after sheet. The sheets are not even laid out the same way: some have a Statement Ref column and some do not, the branch is typed into a red column only some of the time, and a few dates are typed as text.</p>
+  </section>
+
+  <section>
+    <h2>What it does</h2>
+    <div class="figure" role="img" aria-label="Two bank sheets with different layouts are combined into one table with Bank Sheet, Currency and Status columns added">
+      <div class="sheets">
+        <div class="mini"><div class="cap">NORTHGATE FCA USD <em>layout A, with Statement Ref</em></div><div class="tw"><table>
+          <tr><th>Date</th><th>Post ref</th><th>Stmt ref</th><th>Description</th><th>Branch</th><th class="n">CR</th></tr>
+          <tr class="skip"><td colspan="6">KESTREL DISTRIBUTORS ... title rows skipped</td></tr>
+          <tr class="open"><td>01/09/2026</td><td></td><td></td><td>Opening balance</td><td></td><td class="n">40,393.28</td></tr>
+          <tr><td>03/09/2026</td><td>CB0005</td><td>047POSS…0005</td><td>Transfer36310-LAKEPOS</td><td class="red">LK Lakeview</td><td class="n">392.58</td></tr>
+        </table></div></div>
+        <div class="mini"><div class="cap">CAPITAL TRUST ZWG <em>layout B, no Statement Ref</em></div><div class="tw"><table>
+          <tr><th>Date</th><th>Post ref</th><th>Description</th><th>Branch</th><th class="n">DR</th></tr>
+          <tr class="open"><td>01/09/2026</td><td></td><td>Opening balance</td><td></td><td class="n">315,600.00</td></tr>
+          <tr><td>1/9/2026 02:00:00</td><td>X</td><td>TRANSFER HANDLING FEE…</td><td></td><td class="n">80.31</td></tr>
+        </table></div></div>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;<small>Refresh</small></div>
+      <div class="mini"><div class="cap">All Transactions <em>one table</em></div><div class="tw"><table>
+        <tr><th>Date</th><th>Bank sheet</th><th>Ccy</th><th>Status</th><th>Branch</th><th class="n">Net</th></tr>
+        <tr><td>01/09/2026</td><td>NORTHGATE FCA USD</td><td>USD</td><td>Opening</td><td></td><td class="n">-</td></tr>
+        <tr><td>03/09/2026</td><td>NORTHGATE FCA USD</td><td>USD</td><td>Posted</td><td>LK Lakeview</td><td class="n">392.58</td></tr>
+        <tr><td>01/09/2026</td><td>CAPITAL TRUST ZWG</td><td>ZWG</td><td>Opening</td><td></td><td class="n">-</td></tr>
+        <tr><td>01/09/2026</td><td>CAPITAL TRUST ZWG</td><td>ZWG</td><td>X</td><td></td><td class="n">(80.31)</td></tr>
+      </table></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How the query works</h2>
+    <ol class="steps">
+      <li><span>Reads the cashbook path from one named cell, so next month only the path changes.</span></li>
+      <li><span>Lists every sheet in the workbook and skips the non-bank ones (here <code>Org</code> and <code>Bank charges &amp; Imtt</code>). A bank sheet added next month is picked up without touching the code.</span></li>
+      <li><span>On each sheet, finds the &ldquo;Opening balance&rdquo; row. Whether it sits in the 3rd or 4th column tells the query which layout the sheet uses, and every column after it shifts by one to match.</span></li>
+      <li><span>Keeps the opening line and every line with a date and an amount. Dates typed as text (1/9/2026 02:00:00) and amounts typed with commas are converted.</span></li>
+      <li><span>Adds the bank sheet name, the currency read from that name, a Status (Opening, Posted, X or No ref) and a Net amount, and keeps each sheet's lines in their original order.</span></li>
+    </ol>
+    <pre><code>// whichever column holds "Opening balance" decides the layout
+PosA = List.PositionOf(List.Transform(Recs, (r) =&gt; Text.StartsWith(Norm(Col(r, 4)), "OPENINGBAL")), true),
+PosB = List.PositionOf(List.Transform(Recs, (r) =&gt; Text.StartsWith(Norm(Col(r, 3)), "OPENINGBAL")), true),
+Off  = if Pos = PosA then 0 else -1,          // layout B has no Statement Ref column</code></pre>
+  </section>
+
+  <section>
+    <h2>Proof that nothing was lost</h2>
+    <p>The Summary sheet recomputes each bank sheet from the combined table: opening balance plus net movement must equal the closing balance on the sheet. In the demo, all seven sheets check to nil.</p>
+    <div class="check" aria-label="Example check for one sheet">
+      <b>Opening</b><b>Net</b><b>Closing</b><b>Check</b>
+      <span>40,393.28</span><span>19,106.99</span><span>59,500.27</span><span>0.00</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Files</h2>
+    <div class="files">
+      <a class="file" href="Cashbook_Combiner_Demo.xlsx" download><b>Cashbook_Combiner_Demo.xlsx</b><small>The workbook: setup steps, the combined table, the Summary with balance checks, and the query code.</small></a>
+      <a class="file" href="Demo_Cashbook_Sep2026.xlsx" download><b>Demo_Cashbook_Sep2026.xlsx</b><small>A fictional cashbook with seven bank sheets in both layouts, to point the query at.</small></a>
+      <a class="file" href="CashbookCombiner.pq" download><b>CashbookCombiner.pq</b><small>The Power Query (M) code on its own, to paste into a blank query.</small></a>
+    </div>
+  </section>
+
+  <section class="about">
+    <h2>About</h2>
+    <p>A Power Query I built for a month-end cashbook review. The demo files are fictional.</p>
+  </section>
+
+  <section>
+    <h2>Skills shown</h2>
+    <ul class="plain">
+      <li>Power Query (M): custom functions, list and record handling, error-tolerant type conversion.</li>
+      <li>Designing for messy real-world data: two layouts, partly filled columns, text dates.</li>
+      <li>Reconciliation thinking: every sheet is proved back to its own closing balance.</li>
+      <li>Building tools others can run: one input cell, refresh, filter with slicers.</li>
+    </ul>
+  </section>
+</main>
+
+<footer><div class="wrap">Built by Chris Mukonowatsauka · <a href="https://linkedin.com/in/cmkn" target="_blank" rel="noopener">linkedin.com/in/cmkn</a></div></footer>
+</body>
+</html>
